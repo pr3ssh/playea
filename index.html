@@ -7,6 +7,7 @@
     <!-- <link rel="stylesheet" href="css/pure-min.css"> -->
     <link rel="stylesheet" href="http://yui.yahooapis.com/pure/0.2.0/pure-min.css">
     <link rel="stylesheet" href="css/app.css"/>
+    <link href="http://www.gstatic.com/freebase/suggest/4_2/suggest.min.css" rel="stylesheet" type="text/css">
     <script src="http://use.typekit.net/ajf8ggy.js"></script>
     <script>
       try { Typekit.load(); } catch (e) {}
@@ -66,17 +67,16 @@
                         <a th:fsq-photo="photo" rel="lightbox[checkin]" title="{{ photo.user.firstName }}"><img th:fsq-photo="photo" th:fsq-photo-size="cap48"/></a>
                       </li>
                     </ul> -->
-<form onsubmit="listAlbums(this.band.value); return false;">
-<b>Enter the name of a band: </b>
-<input type="text" name="band">
-<input type="submit" value="List Albums">
-</form>
-<hr>
-<!-- This is where we insert the results of our Metaweb queries -->
-<h1 id="title"></h1>        <!-- display band name here -->
-<div id="tracklist"></div>  <!-- list tracks here -->
-<div id="albumlist"></div>  <!-- list of albums here -->
-</div>
+
+<b>Enter the name of a band: </b>                     <!-- Prompt for input -->
+<input type="text" onchange="listAlbums(this.value)"> <!-- Get band name -->
+<hr><div id="output"></div>                           <!-- Display output -->
+
+<p><strong>Music groups:</strong></p>
+<input id="myinput1" type="text">
+<div id="response1">
+<p><strong>Response:</strong>
+<pre class="prettyprint"></pre></p>
 
                     <h2 class="splash-subhead">
                       <!-- <div ng-view></div>
@@ -189,6 +189,7 @@
   <script type="text/javascript" src="js/jquery-1.10.1.min.js"></script>
   <script type="text/javascript" src="js/json2.js"></script>
   <script type="text/javascript" src="js/metaweb.js"></script>
+  <script type="text/javascript" src="http://www.gstatic.com/freebase/suggest/4_2/suggest.min.js"></script>
 
   <script src="http://yui.yahooapis.com/3.10.1/build/yui/yui-min.js"></script>
   <script>
@@ -201,137 +202,61 @@
     });
   </script>
 
+
   <script type="text/javascript">
-    query = [{'id': null, 'name': null, 'type': '/astronomy/planet'}];
-   query_envelope = {'query' : query};
-   service_url = 'http://api.freebase.com/api/service/mqlread';
-   url = service_url  + '?callback=?&query=' + encodeURIComponent(JSON.stringify(query_envelope));
-   $.getJSON(url, function(response) {
-     $('body').append(response.result.map(function(planet){
-       return planet.name;
-     }).toString());
-   });
-  </script>
+$(function() {
+  $("#myinput1").suggest({filter:'(all type:/music/musical_group)'}).bind("fb-select", function(e, data) {
+    $("#response1 pre").text(JSON.stringify(data, null, '  '));
+    prettyPrint();
+    $("#response1").show();
+  })
+});
+</script>
+   
 
-  <script type="text/javascript">                        
-/* Display albums by the specified band */
-function listAlbums(band) {
-    // Find the document elements we need to insert content into
-    var title = document.getElementById("title");
-    var albumlist = document.getElementById("albumlist");
-    var tracklist = document.getElementById("tracklist");
-
-    title.innerHTML = "Albums by " + band;           // Set the page title 
-    albumlist.innerHTML = "<b><i>Loading...</i></b>" // Album list is coming...
-    tracklist.style.visibility = "hidden";           // Hide any old tracks
-    
-    var query = {                      // This is our MQL query 
-  type: "/music/artist",         // Find a band
-  name: band,                    // With the specified name
-  album: [{                      // We want to know about albums         
-      name:null,                 // Return album names
-      id:null,                   // Also ids
-      release_date:null,         // And release dates
-      sort: "release_date",      // Order by release date
-      "release_type!=":"single"  // Don't include singles
-  }]
+   <script type="text/javascript">
+function listAlbums(band) {     // Display albums by the specified band.
+    var envelope = {                       // The mqlread query envelope
+  query : {                          // The MQL query 
+      type: "/music/artist",         // Find a band
+      name: band,                    // With the specified name
+      album: [{                      // We want to know about albums
+    name:null,                 // Return album names
+    release_date:null,         // And release dates
+    sort: "release_date",      // Order by release date
+    "release_type!=":"single",  // Don't include singles
+    key: "AIzaSyDVXXw0a5_r62pYNbc3pLnad3DXsxGlh64"
+      }]
+  }
     };
 
-    // Issue the query and invoke the function below when it is done
-    Metaweb.read(query, displayAlbums);
+    var output = $("#output");                          // Output goes here
+    output.html("<h1>Albums by " + band + "</h1>");     // Display a title
+
+    // Invoke mqlread and call the function below when it is done.
+    // Adding callback=? to the URL makes jQuery do JSONP instead of XHR.
+    jQuery.getJSON("http://api.freebase.com/api/service/mqlread?callback=?",
+       {query: JSON.stringify(envelope)},   // URL parameters
+       displayResults);                     // Callback function
 
     // This function is invoked when we get the result of our MQL query
-    function displayAlbums(result) {
-    console.log(result)  
-  // If no result, the band was unknown.
-  if (!result || !result.album) {
-      albumlist.innerHTML = "<b><i>Unknown band: " + band + "</i></b>";
-      return;
+    function displayResults(response) {  
+  if (response.code == "/api/status/ok" &&        
+      response.result && response.result.album) { // Check for success...
+      var list = $("<ul>");                       // Make <ul> tag.
+      output.append(list.hide())                  // Keep it hidden
+      var albums = response.result.album;         // Get albums.
+      jQuery.each(albums, function() {            // Loop through albums.
+    list.append($("<li>").html(this.name)); // Make <li> for each.
+      });
+      list.show("normal");                        // Reveal the list
   }
-  
-  // Otherwise, the result object matches our query object, 
-  // but has album data filled in.  
-  var albums = result.album;  // the array of album data
-  // Erase the "Loading..." message we displayed earlier
-  albumlist.innerHTML = "";
-  // Loop through the albums
-  for(var i = 0; i < albums.length; i++) {
-      var name = albums[i].name;                   // album name 
-      var year = getYear(albums[i].release_date);  // album release year
-      var text = name + (year?(" ["+year+"]"):""); // name+year
-
-      // Create HTML elements to display the album name and year.
-      var div = document.createElement("div");
-      div.className = "album";
-      div.appendChild(document.createTextNode(text));
-      albumlist.appendChild(div);
-
-      // Add an event handler to display tracks when an album is clicked
-      div.onclick = makeHandler(name, albums[i].id);
+  else {                                          // On failure...
+      output.append("Unknown band: " + band);     // Display message.
   }
-
-  // This function returns a function.  We do it this way to create
-  // a closure that captures the band name and id.
-  function makeHandler(name, id) {
-      return function(e) { listTracks(name, id); }
-  }
-    }
-
-    // A utility to return the year portion of a Metaweb /type/datetime
-    function getYear(date) {
-  if (!date) return null;
-  if (date.length == 4) return date;
-  if (date.match(/^\d{4}-/)) return date.substring(0,4);
-  return null;
     }
 }
-
-/* Display the tracks on the specified album by the specified band */
-function listTracks(albumname, albumid) {
-    // Begin by displaying a Loading... message
-    var tracklist = document.getElementById("tracklist");
-    tracklist.innerHTML = "<h2>" + albumname + "</h2><p>Loading...";
-    tracklist.style.visibility = "visible";
-
-    // This is the MQL query we will issue
-    var query = {
-  type: "/music/album",
-  id: albumid,
-  // Get track names and lengths, sorted by index
-  track: [{name:null, length:null, index:null, sort:"index"}]
-    };
-
-    // Issue the query, invoke the nested function when the response arrives
-    Metaweb.read(query, function(result) {
-         if (result && result.track) { // If result is defined
-       var tracks = result.track;  // array of tracks
-       // Build an array of track names + lengths
-       var listitems = [];
-       for(var i = 0; i < tracks.length; i++) {
-           var n = tracks[i].name + " (" +
-             toMinutesAndSeconds(tracks[i].length) + ")";
-           listitems.push(n);
-       }
-       // Display the track list by setting innerHTML
-       tracklist.innerHTML = "<h2>" + albumname + "</h2>" +
-           "<ol><li>" + listitems.join("<li>") + "</ol>";
-         }
-         else {
-       // If empty result display error message
-       tracklist.innerHTML = "<h2>" + albumname + "</h2>" +
-           "<p>No track list is available.";
-         }
-     });
-
-    // Convert track length in seconds to minutes:seconds format
-    function toMinutesAndSeconds(seconds) {
-  var minutes = Math.floor(seconds/60);
-  var seconds = Math.floor(seconds-(minutes*60));
-  if (seconds <= 9) seconds = "0" + seconds;
-  return minutes + ":" + seconds;
-    }
-};
-  </script>
+</script>
 
 </body>
 </html>
